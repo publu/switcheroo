@@ -1,52 +1,57 @@
 pragma solidity ^0.8.20;
 
-interface IVault {
-    function ownerOf(uint256 vaultId) external view returns (address);
-    function balanceOf(address account) external view returns (uint256);
-    function safeTransferFrom(address from, address to, uint256 vaultId) external;
-    function vaultDebt(uint256 vaultId) external view returns (uint256);
-    function approve(address to, uint256 amount) external;
-    function paybackToken(uint256 vaultId, uint256 amount) external;
-    function vaultCollateral(uint256 vaultId) external view returns (uint256);
-    function withdrawCollateral(uint256 vaultId, uint256 amount) external;
-    function createVault() external returns (uint256);
-    function depositCollateral(uint256 vaultId, uint256 amount) external;
-    function borrowToken(uint256 vaultId, uint256 amount) external;
-}
-
-interface IERC20 {
-    function balanceOf(address account) external view returns (uint256);
-    function approve(address spender, uint256 amount) external returns (bool);
-}
+import "./IVault.sol";
+import "./IERC20.sol";
 
 contract Switcheroo {
-    IERC20 mai = 0x0;
+    // Define the MAI token interface
+    IERC20 mai = IERC20(0x0);
     
-    function migrate(address _original, uint256 vaultId) public {
-        require(original.ownerOf(vaultId) == msg.sender, "Not the owner of vault");
+    // Function to migrate vaults from an original to an upgraded contract
+    function migrate(address _original, address _upgraded, uint256 vaultId) public {
+        // Ensure the caller is the owner of the vault
+        require(IVault(_original).ownerOf(vaultId) == msg.sender, "Not the owner of vault");
 
+        // Initialize the original and upgraded vault contracts
         IVault original = IVault(_original);
         IVault upgraded = IVault(_upgraded);
+        // Store the initial MAI balance of this contract
         uint256 initial = mai.balanceOf(address(this));
 
+        // Transfer the vault from the user to this contract
         original.safeTransferFrom(msg.sender, address(this), vaultId);
 
+        // Retrieve the debt associated with the vault
         uint256 debt = original.vaultDebt(vaultId);
 
+        // Approve the original contract to spend MAI tokens equal to the debt
         mai.approve(address(original), debt);
-        original.paybackToken(vaultId, debt); // should payback all debt.
+        // Pay back the debt of the vault
+        original.paybackToken(vaultId, debt);
         
+        // Retrieve the collateral amount of the vault
         uint256 collateral = original.vaultCollateral(vaultId);
+
+        // Withdraw the collateral from the original vault to this contract
         original.withdrawCollateral(vaultId, collateral);
 
+        // Create a new vault in the upgraded contract
         uint256 newVaultId = upgraded.createVault();
 
-        collateral.approve(address(upgraded), debt);
+        // Approve the upgraded contract to spend the collateral
+        mai.approve(address(upgraded), collateral);
 
+        // Deposit the collateral into the new vault
         upgraded.depositCollateral(newVaultId, collateral);
 
+        // Borrow the same amount of debt in the new vault
         upgraded.borrowToken(newVaultId, debt);
-        uint256 final = mai.balanceOf(address(this));
-        require(final>=initial, "Error. Did not end up with enough mai");
+        // Store the MAI balance after operations
+        uint256 later = mai.balanceOf(address(this));
+
+        // Transfer the new vault back to the user
+        upgraded.safeTransferFrom(address(this), msg.sender, newVaultId);
+        // Ensure the final MAI balance is not less than the initial balance
+        require(later >= initial, "Error. Did not end up with enough mai");
     }
 }
