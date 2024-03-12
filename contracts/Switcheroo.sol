@@ -5,16 +5,68 @@ import "./IERC20.sol";
 
 contract Switcheroo {
     // Define the MAI token interface
-    IERC20 mai = IERC20(0x0);
+    IERC20 mai = IERC20(0xa3Fa99A148fA48D14Ed51d610c367C61876997F1);
+
+    bool private initialized;
+    IVault original;
+    IVault upgraded;
+
+    function initialize(address _mai, address _original, address _upgraded) public onlyOwner {
+        require(!initialized, "Already initialized");
+        mai = IERC20(_mai);
+        initialized = true;
+        original = IVault(_original);
+        upgraded = IVault(_upgraded);
+    }
+
+    bool private paused = false;
+
+    function pause() public onlyOwner {
+        require(!paused, "Contract is already paused");
+        paused = true;
+    }
+
+    function unpause() public onlyOwner {
+        require(paused, "Contract is not paused");
+        paused = false;
+    }
+
+    modifier whenNotPaused() {
+        require(!paused, "Contract is paused");
+        _;
+    }
+
+    modifier whenInitialized() {
+        require(initialized, "Contract is not initialized");
+        _;
+    }
+
+    address private owner;
+
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+    constructor() {
+        owner = msg.sender;
+        emit OwnershipTransferred(address(0), msg.sender);
+    }
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Caller is not the owner");
+        _;
+    }
+
+    function transferOwnership(address newOwner) public onlyOwner {
+        require(newOwner != address(0), "New owner is the zero address");
+        emit OwnershipTransferred(owner, newOwner);
+        owner = newOwner;
+    }
     
     // Function to migrate vaults from an original to an upgraded contract
-    function migrate(address _original, address _upgraded, uint256 vaultId) public {
+    function migrate(uint256 vaultId) public whenInitialized whenNotPaused {
         // Ensure the caller is the owner of the vault
-        require(IVault(_original).ownerOf(vaultId) == msg.sender, "Not the owner of vault");
 
-        // Initialize the original and upgraded vault contracts
-        IVault original = IVault(_original);
-        IVault upgraded = IVault(_upgraded);
+        require(original.ownerOf(vaultId) == msg.sender, "Not the owner of vault");
+
         // Store the initial MAI balance of this contract
         uint256 initial = mai.balanceOf(address(this));
 
